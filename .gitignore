@@ -1,0 +1,42 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# VS Code
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Data, generated artifacts, and local model outputs
+dataset/
+progression_database/
+outputs/
+uploads/
+test_images/
+*.pth
+*.pdf
+*.png
+*.jpg
+*.jpeg
+
+# Retrieval indexes are generated from the image datasets
+retrieval_engine/index/
+
+# Logs
+.log
