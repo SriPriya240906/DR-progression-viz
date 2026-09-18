@@ -60,7 +60,7 @@ def predict(image_path):
         probabilities = torch.softmax(output, dim=1)
 
     prediction = torch.argmax(probabilities, dim=1).item()
-    confidence = probabilities[0][prediction].item() * 100
+    confidence = probabilities[0][prediction].item() * 100  # Raw softmax probability, not calibrated confidence
 
     return prediction, confidence
 
@@ -78,7 +78,7 @@ def predict_details(image_path):
         probabilities = torch.softmax(output, dim=1)[0]
 
     prediction = torch.argmax(probabilities).item()
-    confidence = probabilities[prediction].item() * 100
+    confidence = probabilities[prediction].item() * 100  # Raw softmax probability, not calibrated confidence
 
     class_probabilities = {
         CLASS_NAMES[i]: round(probabilities[i].item() * 100, 2)
@@ -88,6 +88,6 @@ def predict_details(image_path):
     return {
         "grade": prediction,
         "label": CLASS_NAMES[prediction],
-        "confidence": round(confidence, 2),
+        "confidence": round(confidence, 2),  # Note: This is uncalibrated prediction probability
         "probabilities": class_probabilities
     }

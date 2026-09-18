@@ -40,3 +40,9 @@ retrieval_engine/index/
 
 # Logs
 .log
+
+# Frontend dependencies and generated files
+frontend/node_modules/
+frontend/dist/
+frontend/.pytest_cache/
+frontend_backup_before_sidebar/

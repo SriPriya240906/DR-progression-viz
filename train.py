@@ -1,39 +1,65 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import timm
+import numpy as np
 
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Subset
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    precision_recall_fscore_support,
+    confusion_matrix,
+    classification_report
+)
 
 from dataset import APTOSDataset
 
-# ---------------------------------
+
+# ==========================================
 # DEVICE
-# ---------------------------------
+# ==========================================
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ---------------------------------
-# DATASET
-# ---------------------------------
+print("Device:", device)
+
+
+# ==========================================
+# CLASS NAMES
+# ==========================================
+CLASS_NAMES = [
+    "No DR",
+    "Mild",
+    "Moderate",
+    "Severe",
+    "Proliferative DR"
+]
+
+
+# ==========================================
+# LOAD DATASET
+# ==========================================
 dataset = APTOSDataset(
     csv_file="dataset/train.csv",
     img_dir="dataset/train"
 )
 
-# 80% train, 20% validation
-train_size = int(0.8 * len(dataset))
-val_size = len(dataset) - train_size
+labels = dataset.data["diagnosis"].values
 
-train_dataset, val_dataset = random_split(
-    dataset,
-    [train_size, val_size]
+
+# ==========================================
+# REPRODUCIBLE STRATIFIED SPLIT
+# ==========================================
+indices = np.arange(len(dataset))
+
+train_indices, val_indices = train_test_split(
+    indices,
+    test_size=0.20,
+    random_state=42,
+    stratify=labels
 )
 
-train_loader = DataLoader(
-    train_dataset,
-    batch_size=8,
-    shuffle=True
-)
+val_dataset = Subset(dataset, val_indices)
 
 val_loader = DataLoader(
     val_dataset,
@@ -41,12 +67,16 @@ val_loader = DataLoader(
     shuffle=False
 )
 
-# ---------------------------------
-# MODEL
-# ---------------------------------
+print("Total images:", len(dataset))
+print("Evaluation images:", len(val_dataset))
+
+
+# ==========================================
+# LOAD TRAINED MODEL
+# ==========================================
 model = timm.create_model(
     "efficientnet_b0",
-    pretrained=True
+    pretrained=False
 )
 
 model.classifier = nn.Linear(
@@ -54,92 +84,140 @@ model.classifier = nn.Linear(
     5
 )
 
-model.to(device)
-
-# ---------------------------------
-# LOSS
-# ---------------------------------
-criterion = nn.CrossEntropyLoss()
-
-optimizer = optim.Adam(
-    model.parameters(),
-    lr=1e-4
+model.load_state_dict(
+    torch.load(
+        "dr_model.pth",
+        map_location=device
+    )
 )
 
-# ---------------------------------
-# TRAINING
-# ---------------------------------
-epochs = 10
+model.to(device)
+model.eval()
 
-best_accuracy = 0
+print("Trained model loaded successfully.")
 
-print("Training started...")
 
-for epoch in range(epochs):
+# ==========================================
+# EVALUATION
+# ==========================================
+y_true = []
+y_pred = []
 
-    model.train()
+with torch.no_grad():
 
-    train_loss = 0
-
-    for images, labels in train_loader:
+    for images, labels_batch in val_loader:
 
         images = images.to(device)
-        labels = labels.to(device)
 
         outputs = model(images)
 
-        loss = criterion(outputs, labels)
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        train_loss += loss.item()
-
-    # -----------------------------
-    # VALIDATION
-    # -----------------------------
-    model.eval()
-
-    correct = 0
-    total = 0
-
-    with torch.no_grad():
-
-        for images, labels in val_loader:
-
-            images = images.to(device)
-            labels = labels.to(device)
-
-            outputs = model(images)
-
-            predictions = torch.argmax(outputs, dim=1)
-
-            correct += (predictions == labels).sum().item()
-
-            total += labels.size(0)
-
-    accuracy = correct / total
-
-    print(
-        f"Epoch {epoch+1}/{epochs} | "
-        f"Loss: {train_loss:.3f} | "
-        f"Validation Accuracy: {accuracy:.4f}"
-    )
-
-    if accuracy > best_accuracy:
-
-        best_accuracy = accuracy
-
-        torch.save(
-            model.state_dict(),
-            "dr_model.pth"
+        predictions = torch.argmax(
+            outputs,
+            dim=1
         )
 
-        print("✅ Best model saved.")
+        y_true.extend(labels_batch.numpy())
+        y_pred.extend(predictions.cpu().numpy())
+
+
+# ==========================================
+# METRICS
+# ==========================================
+accuracy = accuracy_score(
+    y_true,
+    y_pred
+)
+
+balanced_accuracy = balanced_accuracy_score(
+    y_true,
+    y_pred
+)
+
+precision, recall, f1, support = precision_recall_fscore_support(
+    y_true,
+    y_pred,
+    labels=[0, 1, 2, 3, 4],
+    zero_division=0
+)
+
+macro_precision = precision.mean()
+macro_recall = recall.mean()
+macro_f1 = f1.mean()
+
+conf_matrix = confusion_matrix(
+    y_true,
+    y_pred,
+    labels=[0, 1, 2, 3, 4]
+)
+
+
+# ==========================================
+# RESULTS
+# ==========================================
+print()
+print("=" * 60)
+print("DR MODEL EVALUATION")
+print("=" * 60)
+
+print(f"Accuracy:           {accuracy:.4f}")
+print(f"Balanced Accuracy:  {balanced_accuracy:.4f}")
+print(f"Macro Precision:    {macro_precision:.4f}")
+print(f"Macro Recall:       {macro_recall:.4f}")
+print(f"Macro F1:           {macro_f1:.4f}")
+
 
 print()
+print("-" * 60)
+print("PER-CLASS RESULTS")
+print("-" * 60)
 
-print("Training Finished")
+for i, name in enumerate(CLASS_NAMES):
 
-print(f"Best Validation Accuracy: {best_accuracy:.4f}")
+    print()
+    print(name)
+    print(f"  Precision: {precision[i]:.4f}")
+    print(f"  Recall:    {recall[i]:.4f}")
+    print(f"  F1:        {f1[i]:.4f}")
+    print(f"  Support:   {support[i]}")
+
+
+print()
+print("-" * 60)
+print("CONFUSION MATRIX")
+print("-" * 60)
+
+print(
+    "Rows = Actual | Columns = Predicted"
+)
+
+print("              " + "  ".join(
+    f"{i:^8}" for i in range(5)
+))
+
+for i, row in enumerate(conf_matrix):
+
+    print(
+        f"{i:^8}       " +
+        "  ".join(
+            f"{value:^8}" for value in row
+        )
+    )
+
+
+print()
+print("-" * 60)
+print("CLASSIFICATION REPORT")
+print("-" * 60)
+
+print(
+    classification_report(
+        y_true,
+        y_pred,
+        target_names=CLASS_NAMES,
+        zero_division=0
+    )
+)
+
+print("=" * 60)
+print("Evaluation complete.")
+print("=" * 60)
